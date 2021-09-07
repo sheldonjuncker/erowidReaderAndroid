@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Erowid Reader</string>
+    <string name="title_home">Erowid Reader</string>
+    <string name="title_dashboard">Dashboard</string>
+    <string name="title_notifications">Notifications</string>
+    <string name="title_recordings">Recordings</string>
+</resources>
