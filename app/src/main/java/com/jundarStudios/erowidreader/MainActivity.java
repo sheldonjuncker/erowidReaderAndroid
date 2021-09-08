@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
@@ -12,15 +14,22 @@ import com.google.android.material.bottomnavigation.BottomNavigationView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.os.HandlerCompat;
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.navigation.ui.NavigationUI;
 
 import com.jundarStudios.erowidreader.audioRecording.AudioRecorder;
+import com.jundarStudios.erowidreader.audioRecording.AudioUtils;
 import com.jundarStudios.erowidreader.audioRecording.RawAudioRecorder;
 import com.jundarStudios.erowidreader.databinding.ActivityMainBinding;
+import com.jundarStudios.erowidreader.experience.ExperienceReport;
+import com.jundarStudios.erowidreader.experience.ExperienceRepository;
+import com.jundarStudios.erowidreader.experience.ExperienceResultsCallback;
 
+import java.util.ArrayList;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,6 +41,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean permissionToRecordAccepted = false;
     private String[] permissions = {Manifest.permission.RECORD_AUDIO};
     ExecutorService executorService;
+    Handler mainThreadHandler;
 
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -65,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
 
         //We'll need some threads for recording audio and waiting on transcription results and text to speech results
         executorService = Executors.newFixedThreadPool(4);
+        mainThreadHandler = HandlerCompat.createAsync(Looper.getMainLooper());
 
         //Because this is the only thing the app does, we just request it immediately.
         ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION);
@@ -72,6 +83,19 @@ public class MainActivity extends AppCompatActivity {
 
     public void startRecording(View view) {
         System.out.println("starting recording...");
+
+        ExperienceResultsCallback resultsCallback = new ExperienceResultsCallback() {
+            @Override
+            public void success(ArrayList<ExperienceReport> experienceReports) {
+                binding.resultText.setText("success!");
+            }
+
+            @Override
+            public void error(int code, String error) {
+                binding.resultText.setText("Error: " + error);
+            }
+        };
+
         executorService.execute(() -> {
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 return;
@@ -82,7 +106,14 @@ public class MainActivity extends AppCompatActivity {
 
             }
             audioRecorder.stop();
-            System.out.println("recorded some audio: " + audioRecorder.getLength() + " bytes");
+            byte[] audioData = audioRecorder.getCompleteRecordingAsWav();
+            System.out.println("recorded some audio: " + audioData.length + " bytes");
+
+            //Let's upload it to our server and get some results!
+            ExperienceRepository repository = new ExperienceRepository(audioData);
+            mainThreadHandler.post(() -> {
+                repository.loadExperienceReports(resultsCallback);
+            });
         });
         System.out.println("thread is off and running!");
     }
